@@ -1,9 +1,10 @@
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CallbackQueryHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CallbackQueryHandler, ContextTypes, CommandHandler
 
 from gpt import ChatGptService
 from util import (load_message, send_text, send_image, show_main_menu,
-                  default_callback_handler)
+                  default_callback_handler, load_prompt)
+import  credentials
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -21,12 +22,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     })
 
+async def random(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await send_image(update, context, 'random')
+    text = load_message('random')
+    await send_text(update, context, text)
+    prompt = load_prompt('random')
+    response = await chat_gpt.send_question(prompt, "Розкажи щось цікаве")
+    await send_text(update, context, response)
 
-chat_gpt = ChatGptService('ChatGPT TOKEN')
-app = ApplicationBuilder().token('Telegram TOKEN').build()
+
+chat_gpt = ChatGptService(credentials.ChatGPT_TOKEN)
+app = ApplicationBuilder().token(credentials.BOT_TOKEN).build()
 
 # Зареєструвати обробник команди можна так:
 # app.add_handler(CommandHandler('command', handler_func))
+app.add_handler(CommandHandler('start', start))
+app.add_handler(CommandHandler('random', random))
+
 
 # Зареєструвати обробник колбеку можна так:
 # app.add_handler(CallbackQueryHandler(app_button, pattern='^app_.*'))
