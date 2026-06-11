@@ -1,5 +1,5 @@
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CallbackQueryHandler, ContextTypes, CommandHandler
+from telegram.ext import ApplicationBuilder, CallbackQueryHandler, ContextTypes, CommandHandler, MessageHandler, filters
 
 from gpt import ChatGptService
 from util import (load_message, send_text, send_image, show_main_menu,
@@ -33,6 +33,7 @@ async def random(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 'random_finish': 'Закінчити',
                                 'random_one_more': 'Хочу ще факт'
                             })
+
 async def random_buttons_handler(update: Update, context):
     query = update.callback_query.data
     if query == 'random_finish':
@@ -42,6 +43,25 @@ async def random_buttons_handler(update: Update, context):
     await update.callback_query.answer()
 
 
+async def chat_gpt_interface(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['mode'] = 'gpt'
+
+    text = load_message('gpt')
+    await send_image(update, context, 'gpt')
+    await send_text(update, context, text)
+
+    prompt = load_prompt('gpt')
+    chat_gpt.set_prompt(prompt)
+
+async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    mode = context.user_data.get('mode')
+    if mode == 'gpt':
+        user_text = update.message.text
+        response = await chat_gpt.add_message(user_text)
+        await send_text(update, context, response)
+    else:
+        await send_text(update, context, "Будь ласка, оберіть команду в меню 🤖")
+
 
 chat_gpt = ChatGptService(credentials.ChatGPT_TOKEN)
 app = ApplicationBuilder().token(credentials.BOT_TOKEN).build()
@@ -50,10 +70,12 @@ app = ApplicationBuilder().token(credentials.BOT_TOKEN).build()
 # app.add_handler(CommandHandler('command', handler_func))
 app.add_handler(CommandHandler('start', start))
 app.add_handler(CommandHandler('random', random))
+app.add_handler(CommandHandler('gpt', chat_gpt_interface))
 
 
 # Зареєструвати обробник колбеку можна так:
 # app.add_handler(CallbackQueryHandler(app_button, pattern='^app_.*'))
-# app.add_handler(CallbackQueryHandler(default_callback_handler))
 app.add_handler(CallbackQueryHandler(random_buttons_handler, pattern='^random_.*'))
+# app.add_handler(CallbackQueryHandler(default_callback_handler))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 app.run_polling()
