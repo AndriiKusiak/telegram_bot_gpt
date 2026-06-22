@@ -1,5 +1,3 @@
-from pydoc_data.topics import topics
-
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CallbackQueryHandler, ContextTypes, CommandHandler, MessageHandler, filters
 
@@ -18,7 +16,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'random': 'Дізнатися випадковий цікавий факт 🧠',
         'gpt': 'Задати питання чату GPT 🤖',
         'talk': 'Поговорити з відомою особистістю 👤',
-        'quiz': 'Взяти участь у квізі ❓'
+        'quiz': 'Взяти участь у квізі ❓',
+        'translate': 'Перекладач 🌐'
         # Додати команду в меню можна так:
         # 'command': 'button text'
 
@@ -68,7 +67,7 @@ async def dialog(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'talk_hawking': 'Стівен Гокінг 🔬'
     })
 
-async  def quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['quiz_score'] = 0
     context.user_data['mode'] = 'quiz_select'
 
@@ -80,6 +79,57 @@ async  def quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'quiz_math': 'Математика 📐',
         'quiz_biology': 'Біологія 🧬'
     })
+
+async def translate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['mode'] = 'translate_select_lang'
+
+    text = load_message('translate')
+    await send_image(update, context, 'translate')
+
+    await send_text_buttons(update, context, text, {
+        'translation_en': 'Англійська GB',
+        'translation_uk': 'Українська UA',
+        'translation_es': 'Іспанська ES',
+        'translation_de': 'Німецька DE',
+        'translation_pl': 'Польська PL'
+    })
+
+async def translate_buttons_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query.data
+    await update.callback_query.answer()
+
+    if query == 'translate_finish':
+        await start(update, context)
+        return
+
+    if query == 'translate_change_lang':
+        context.user_data['mode'] = 'translate_select_lang'
+        await send_text_buttons(update, context, 'Оберіть нову мову для перекладу 👇', {
+            'translation_en': 'Англійська GB',
+            'translation_uk': 'Українська UA',
+            'translation_es': 'Іспанська ES',
+            'translation_de': 'Німецька DE',
+            'translation_pl': 'Польська PL'
+        })
+        return
+
+    if query.startswith('translation_'):
+        languages = {
+            'translation_en': 'англійську 🇬🇧',
+            'translation_uk': 'українську 🇺🇦',
+            'translation_es': 'іспанську 🇪🇸',
+            'translation_de': 'німецьку 🇩🇪',
+            'translation_pl': 'польську 🇵🇱'
+        }
+
+        context.user_data['translate_to'] = languages[query]
+        context.user_data['mode'] = 'translate_waiting_text'
+
+        prompt = load_prompt('translate')
+        chat_gpt.set_prompt(prompt)
+
+        await send_text(update, context, f'Надішліть текст, який потрібно перекласти на {languages[query]}:')
+
 
 async def quiz_buttons_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query.data
@@ -170,6 +220,20 @@ async def chat_gpt_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif mode == 'quiz_select':
         await send_text(update, context, "Спочатку оберіть тему квізу за допомогою кнопок вище 👆")
 
+    elif mode == 'translate_waiting_text':
+        target_lang = context.user_data.get('translate_to', 'англійську GB')
+
+        gpt_request = f'Переклади цей текст на {target_lang}:\n\n{user_text}'
+        response = await chat_gpt.add_message(gpt_request)
+
+        await send_text_buttons(update, context, response, {
+            'translate_change_lang': 'Змінити мову 🔄',
+            'translate_finish': 'Закінчити ❌'
+        })
+
+    elif mode == 'translate_select_lang':
+        await send_text(update, context, 'Спочатку оберіть мову перекладу за допомогою кнопок вище 👆')
+
     else:
         await send_text(update, context, "Будь ласка, оберіть команду в меню 🤖")
 
@@ -185,6 +249,7 @@ app.add_handler(CommandHandler('random', random))
 app.add_handler(CommandHandler('gpt', chat_gpt_interface))
 app.add_handler(CommandHandler('talk', dialog))
 app.add_handler(CommandHandler('quiz', quiz))
+app.add_handler(CommandHandler('translate', translate))
 
 
 # Зареєструвати обробник колбеку можна так:
@@ -192,6 +257,7 @@ app.add_handler(CommandHandler('quiz', quiz))
 app.add_handler(CallbackQueryHandler(random_buttons_handler, pattern='^random_.*'))
 app.add_handler(CallbackQueryHandler(dialog_buttons_handler, pattern='^talk_.*'))
 app.add_handler(CallbackQueryHandler(quiz_buttons_handler, pattern='^quiz_.*'))
+app.add_handler(CallbackQueryHandler(translate_buttons_handler, pattern='^translate_.*|^translation_.*'))
 
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt_handler))
 app.add_handler(CallbackQueryHandler(default_callback_handler))
