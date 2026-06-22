@@ -11,9 +11,18 @@ import credentials
 # ============================================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['mode'] = None
+
     text = load_message('main')
     await send_image(update, context, 'main')
-    await send_text(update, context, text)
+    await send_text_buttons(update, context, text, {
+        'menu_random': 'Дізнатися випадковий цікавий факт 🧠',
+        'menu_gpt': 'Задати питання чату GPT 🤖',
+        'menu_talk': 'Поговорити з відомою особистістю 👤',
+        'menu_quiz': 'Взяти участь у квізі ❓',
+        'menu_translate': 'Перекладач 🌐',
+        'menu_recommend': 'Рекомендації (фільми, книги) 🎬📚'
+    })
     await show_main_menu(update, context, {
         'start': 'Головне меню',
         'random': 'Дізнатися випадковий цікавий факт 🧠',
@@ -23,6 +32,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'translate': 'Перекладач 🌐',
         'recommend': 'Рекомендації (фільми, книги) 🎬📚'
     })
+
+async def main_menu_buttons_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query.data
+    await update.callback_query.answer()
+
+    if query == 'menu_random':
+        await random(update, context)
+    elif query == 'menu_gpt':
+        await chat_gpt_interface(update, context)
+    elif query == 'menu_talk':
+        await dialog(update, context)
+    elif query == 'menu_quiz':
+        await quiz(update, context)
+    elif query == 'menu_translate':
+        await translate(update, context)
+    elif query == 'menu_recommend':
+        await recommend(update, context)
 
 # ============================================================
 #                  Випадковий факт
@@ -36,7 +62,7 @@ async def random(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response = await chat_gpt.send_question(prompt, "Розкажи щось цікаве")
     await send_text_buttons(update, context, response,
                             {
-                                'random_finish': 'Закінчити',
+                                'random_finish': 'Закінчити ❌',
                                 'random_one_more': 'Хочу ще факт'
                             })
 
@@ -168,7 +194,7 @@ async def dialog_buttons_handler(update: Update, context: ContextTypes.DEFAULT_T
         return
     characters = {
         'talk_cobain': ('talk_cobain', 'Привіт! Я - Курт Кобейн. Про що поговоримо? 🎸'),
-        'talk_elizabeth': ('talk_elizabeth', 'Вітаю вас. Я - Королева Єлизавета II. Рада можливості провести цю бесіду. 👑'),
+        'talk_elizabeth': ('talk_queen', 'Вітаю вас. Я - Королева Єлизавета II. Рада можливості провести цю бесіду. 👑'),
         'talk_tolkien': ('talk_tolkien', 'Вітаю, мій друже! Я - Дж.Р.Р. Толкін. Що вас цікавить? 📖'),
         'talk_nietzsche': ('talk_nietzsche', 'Я - Фрідріх Ніцше. Ну ж бо, зазирнемо у безодню разом. 🧠'),
         'talk_hawking': ('talk_hawking', 'Привіт. Я - Стівен Гокінг. Про що ти хочеш дізнатися? 🔬')
@@ -375,6 +401,7 @@ app.add_handler(CommandHandler('recommend', recommend))
 #                       Коллбеки
 # ===========================================================
 
+app.add_handler(CallbackQueryHandler(main_menu_buttons_handler, pattern='^menu_.*'))
 app.add_handler(CallbackQueryHandler(random_buttons_handler, pattern='^random_.*'))
 app.add_handler(CallbackQueryHandler(gpt_buttons_handler, pattern='^gpt_.*'))
 app.add_handler(CallbackQueryHandler(dialog_buttons_handler, pattern='^talk_.*'))
