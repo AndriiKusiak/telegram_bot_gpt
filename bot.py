@@ -156,9 +156,9 @@ async def chat_gpt_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif mode == 'quiz_waiting_answer':
         response = await chat_gpt.add_message(user_text)
         if response.startswith('Правильно!'):
-            context.user_data['quiz_score'] = context.user_data.get('quiz_score', 0)
+            context.user_data['quiz_score'] = context.user_data.get('quiz_score', 0) + 1
 
-        current_score = context.user_data.get('quiz_score', 0) + 1
+        current_score = context.user_data.get('quiz_score', 0)
         full_response = f"{response}\n\n🏆 Ваш поточний рахунок: {current_score}"
 
         await send_text_buttons(update, context, full_response, {
