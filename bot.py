@@ -1,3 +1,5 @@
+from pydoc_data.topics import topics
+
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CallbackQueryHandler, ContextTypes, CommandHandler, MessageHandler, filters
 
@@ -66,6 +68,52 @@ async def dialog(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'talk_hawking': 'Стівен Гокінг 🔬'
     })
 
+async  def quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['quiz_score'] = 0
+    context.user_data['mode'] = 'quiz_select'
+
+    text = load_message('quiz')
+    await send_image(update, context, 'quiz')
+
+    await send_text_buttons(update, context, text, {
+        'quiz_prog': 'ПрограмуванняPython 🐍',
+        'quiz_math': 'Математика 📐',
+        'quiz_biology': 'Біологія 🧬'
+    })
+
+async def quiz_buttons_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query.data
+    await update.callback_query.answer()
+
+    if query == 'quiz_finish':
+        score = context.user_data.get('quiz_score', 0)
+        await send_text(update, context, f"Квіз завершено! Ваш результат: {score} 🏆")
+        await start(update, context)
+        return
+
+    if query == 'quiz_change_topic':
+        context.user_data['mode'] = 'quiz_select'
+        await  send_text_buttons(update, context, 'Оберіть нову тему для квізу 👇', {
+            'quiz_prog': 'Програмування Python 🐍',
+            'quiz_math': 'Математика 📐',
+            'quiz_biology': 'Біологія 🧬'
+        })
+        return
+
+    themes = ['quiz_prog', 'quiz_math', 'quiz_biology', 'quiz_more']
+    if query in themes:
+        context.user_data['mode'] = 'quiz_waiting_answer'
+
+        if query != 'quiz_more':
+            prompt = load_prompt('quiz')
+            chat_gpt.set_prompt(prompt)
+            user_message = query
+        else:
+            user_message = 'quiz_more'
+
+        question = await chat_gpt.add_message(user_message)
+        await send_text(update, context, question)
+
 async def dialog_buttons_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query.data
     await update.callback_query.answer()
@@ -104,8 +152,27 @@ async def chat_gpt_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif mode == 'talk_select':
         await send_text(update, context, "Будь ласка, спочатку оберіть особистість за допомогою кнопок вище 👆")
+
+    elif mode == 'quiz_waiting_answer':
+        response = await chat_gpt.add_message(user_text)
+        if response.startswith('Правильно!'):
+            context.user_data['quiz_score'] = context.user_data.get('quiz_score', 0)
+
+        current_score = context.user_data.get('quiz_score', 0) + 1
+        full_response = f"{response}\n\n🏆 Ваш поточний рахунок: {current_score}"
+
+        await send_text_buttons(update, context, full_response, {
+            'quiz_more': 'Наступне питання ➡️',
+            'quiz_change_topic': 'Змінити тему 🔄',
+            'quiz_finish': 'Завершити квіз 🏁'
+        })
+
+    elif mode == 'quiz_select':
+        await send_text(update, context, "Спочатку оберіть тему квізу за допомогою кнопок вище 👆")
+
     else:
         await send_text(update, context, "Будь ласка, оберіть команду в меню 🤖")
+
 
 
 chat_gpt = ChatGptService(credentials.ChatGPT_TOKEN)
@@ -117,12 +184,15 @@ app.add_handler(CommandHandler('start', start))
 app.add_handler(CommandHandler('random', random))
 app.add_handler(CommandHandler('gpt', chat_gpt_interface))
 app.add_handler(CommandHandler('talk', dialog))
+app.add_handler(CommandHandler('quiz', quiz))
 
 
 # Зареєструвати обробник колбеку можна так:
 # app.add_handler(CallbackQueryHandler(app_button, pattern='^app_.*'))
 app.add_handler(CallbackQueryHandler(random_buttons_handler, pattern='^random_.*'))
-# app.add_handler(CallbackQueryHandler(default_callback_handler))
 app.add_handler(CallbackQueryHandler(dialog_buttons_handler, pattern='^talk_.*'))
+app.add_handler(CallbackQueryHandler(quiz_buttons_handler, pattern='^quiz_.*'))
+
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt_handler))
+app.add_handler(CallbackQueryHandler(default_callback_handler))
 app.run_polling()
