@@ -1,5 +1,6 @@
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CallbackQueryHandler, ContextTypes, CommandHandler, MessageHandler, filters
+from unicodedata import category
 
 from gpt import ChatGptService
 from util import (load_message, send_text, send_image, show_main_menu,
@@ -17,10 +18,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'gpt': 'Задати питання чату GPT 🤖',
         'talk': 'Поговорити з відомою особистістю 👤',
         'quiz': 'Взяти участь у квізі ❓',
-        'translate': 'Перекладач 🌐'
-        # Додати команду в меню можна так:
-        # 'command': 'button text'
-
+        'translate': 'Перекладач 🌐',
+        'recommend': 'Рекомендації (фільми, книги) 🎬📚'
     })
 
 async def random(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -93,6 +92,67 @@ async def translate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'translation_de': 'Німецька DE',
         'translation_pl': 'Польська PL'
     })
+
+async def recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['mode'] = 'recommend_select_category'
+    context.user_data['ignored_items'] = []
+
+    text = load_message('recommend')
+    await send_image(update, context, 'recommend')
+
+    await send_text_buttons(update, context, text, {
+        'recommend_movies': 'Фільми 🎬',
+        'recommend_books': 'Книги 📚',
+        'recommend_music': 'Музика 🎵'
+    })
+
+async def recommend_buttons_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query.data
+    await update.callback_query.answer()
+
+    if query == 'recommend_finish':
+        await start(update, context)
+        return
+
+    if query == 'recommend_dislike':
+        last_recommendation = context.user_data.get('last_recommendation', '')
+        if last_recommendation:
+            context.user_data['ignored_items'].append(last_recommendation)
+
+        context.user_data['mode'] = 'recommend_waiting_genre'
+
+        category = context.user_data.get('recommend_category')
+        genre = context.user_data.get('recommend_genre')
+        ignored = ', '.join(context.user_data['ignored_items'])
+
+        gpt_request = (
+            f"Запропонуй інший варіант у категорії '{category}' (жанр: {genre}). "
+            f"Будь ласка, НЕ РЕКОМЕНДУЙ наступні твори/виконавців: {ignored}."
+        )
+
+        response = await chat_gpt.add_message(gpt_request)
+        context.user_data['last_recommendation'] = response
+
+        await send_text_buttons(update, context, response, {
+            'recommend_dislike': 'Не подобається 👎',
+            'recommend_finish': 'Закінчити ❌'
+        })
+        return
+
+    if query in ['recommend_movies', 'recommend_books', 'recommend_music']:
+        categories = {
+            'recommend_movies': 'фільми 🎬',
+            'recommend_books': 'книги 📚',
+            'recommend_music': 'музика 🎵'
+        }
+
+        context.user_data['recommend_category'] = categories[query]
+        context.user_data['mode'] = 'recommend_waiting_genre'
+
+        prompt = load_prompt('recommend')
+        chat_gpt.set_prompt(prompt)
+
+        await send_text(update, context, f"Ви обрали категорію: {categories[query]}.\nНапишіть бажаний жанр або настрій (наприклад: фантастика, комедія, детектив, для відпочинку):")
 
 async def translate_buttons_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query.data
@@ -234,6 +294,25 @@ async def chat_gpt_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif mode == 'translate_select_lang':
         await send_text(update, context, 'Спочатку оберіть мову перекладу за допомогою кнопок вище 👆')
 
+    elif mode == 'recommend_waiting_genre':
+        if 'recommend_genre' not in context.user_data or context.user_data.get('recommend_genre') != user_text:
+            context.user_data['recommend_genre'] = user_text
+
+        category = context.user_data.get('recommend_category')
+        genre = context.user_data.get('recommend_genre')
+
+        gpt_request = f"Категорія: {category}. Жанр/Настрій: {genre}."
+        response = await chat_gpt.add_message(gpt_request)
+
+        context.user_data['last_recommendation'] = response
+        await send_text_buttons(update, context, response, {
+            'recommend_dislike': 'Не подобається 👎',
+            'recommend_finish': 'Закінчити ❌'
+        })
+
+    elif mode == 'recommend_select_category':
+        await send_text(update, context, 'Спочатку оберіть категорію рекомендацій за допомогою кнопок вище 👆')
+
     else:
         await send_text(update, context, "Будь ласка, оберіть команду в меню 🤖")
 
@@ -250,6 +329,7 @@ app.add_handler(CommandHandler('gpt', chat_gpt_interface))
 app.add_handler(CommandHandler('talk', dialog))
 app.add_handler(CommandHandler('quiz', quiz))
 app.add_handler(CommandHandler('translate', translate))
+app.add_handler(CommandHandler('recommend', recommend))
 
 
 # Зареєструвати обробник колбеку можна так:
@@ -258,6 +338,7 @@ app.add_handler(CallbackQueryHandler(random_buttons_handler, pattern='^random_.*
 app.add_handler(CallbackQueryHandler(dialog_buttons_handler, pattern='^talk_.*'))
 app.add_handler(CallbackQueryHandler(quiz_buttons_handler, pattern='^quiz_.*'))
 app.add_handler(CallbackQueryHandler(translate_buttons_handler, pattern='^translate_.*|^translation_.*'))
+app.add_handler(CallbackQueryHandler(recommend_buttons_handler, pattern='^recommend_.*'))
 
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_gpt_handler))
 app.add_handler(CallbackQueryHandler(default_callback_handler))
